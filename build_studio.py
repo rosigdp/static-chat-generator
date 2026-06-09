@@ -276,6 +276,17 @@ STUDIO_CSS = r"""
 .fs-sub .fs-proyek{display:inline-flex;align-items:center;gap:6px;color:hsl(var(--foreground))}
 .fs-composer-slot{width:100%;display:flex;justify-content:center}
 .fs-chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;width:100%}
+/* ≤1024px: shortcuts move above the Agen AI picker + input, on one scrollable line */
+@media (max-width:1024px){
+  .fs-inner>.fs-greet{order:1}
+  .fs-inner>.fs-sub{order:2}
+  .fs-inner>.fs-chips{order:3}
+  .fs-inner>.fs-composer-slot{order:4}
+  .fs-chips{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+    -webkit-mask-image:linear-gradient(to right,transparent 0,#000 28px,#000 calc(100% - 28px),transparent 100%);
+    mask-image:linear-gradient(to right,transparent 0,#000 28px,#000 calc(100% - 28px),transparent 100%)}
+  .fs-chips::-webkit-scrollbar{display:none}
+}
 .studio-fab{
   position:fixed; bottom:18px; right:18px; width:auto; padding:10px 14px;
   background:#ff6b4a; color:#fff; border:0; border-radius:14px;
@@ -310,8 +321,10 @@ html.studio-recording .studio-console{display:none !important}
 .a2-text{font-size:14px;line-height:1.5;color:hsl(var(--foreground))}
 .a2-text.h1{font-size:1.4em;font-weight:700}.a2-text.h2{font-size:1.18em;font-weight:700}
 .a2-text.caption{font-size:11.5px;color:hsl(var(--muted-foreground));text-transform:uppercase;letter-spacing:.04em}
-.a2-btn{border:0;border-radius:8px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
-.a2-btn.primary{background:hsl(var(--primary));color:hsl(var(--primary-foreground))}
+.a2-btn{border:0;border-radius:8px;padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;outline:none}
+.a2-btn:focus,.a2-btn:focus-visible{outline:none;box-shadow:none}
+.a2-btn.primary{background:#00c983;color:#fff}
+.a2-btn.primary .a2-text,.a2-btn.primary p{color:#fff}
 .a2-btn.borderless{background:transparent;color:hsl(var(--primary))}
 .a2-field{display:flex;flex-direction:column;gap:4px}
 .a2-field input{border:1px solid hsl(var(--border));border-radius:8px;padding:8px 11px;font-size:13.5px;width:100%;background:hsl(var(--background));color:hsl(var(--foreground));font-family:inherit}
@@ -321,7 +334,7 @@ html.studio-recording .studio-console{display:none !important}
 .a2-err{color:#c0392b;font-family:"Geist Mono",monospace;font-size:12px;padding:10px;background:#fdecea;border-radius:9px;white-space:pre-wrap}
 .a2-btn.outline{background:#fff;border:1px solid hsl(var(--border));color:hsl(var(--foreground))}
 .a2-btn.ghost{background:transparent;color:hsl(var(--foreground))}
-.a2-btn:disabled{opacity:.45;cursor:not-allowed;background:hsl(var(--muted));color:hsl(var(--muted-foreground));border-color:transparent}
+.a2-btn:disabled{opacity:.45;cursor:not-allowed;background:#e8e8e8;color:hsl(var(--muted-foreground));border-color:transparent}
 .a2-btn.cell{width:44px;height:44px;padding:0;border-radius:50%;display:inline-grid;place-items:center;font-weight:600}
 .a2-text.cellhead{width:44px;text-align:center;color:hsl(var(--muted-foreground));font-size:12px}
 .a2-card-info{background:#eaf4fb;border-color:#d6e9f7}
@@ -1007,10 +1020,15 @@ function renderComponent(id,surf,data,scope,sid){
     case 'Button':{
       const label=c.child?renderComponent(c.child,surf,data,scope,sid):esc(resolveDyn(c.text,data,scope)||'Button');
       const VAR={primary:'primary',outline:'outline',ghost:'ghost',borderless:'ghost',secondary:'outline'};
-      const variant=VAR[c.variant]||'primary';
+      let variant=VAR[c.variant]||'primary';
+      const ev=c.action&&c.action.event;
+      // Reactive date/time picker: the currently selected date/time is "primary".
+      if(ev&&!c.disabled&&ev.context){
+        if(ev.name==='select_date'&&'date'in ev.context) variant=(getPointer(data,'/sel/date',scope)===ev.context.date)?'primary':'outline';
+        else if(ev.name==='select_time'&&'time'in ev.context) variant=(getPointer(data,'/sel/time',scope)===ev.context.time)?'primary':'outline';
+      }
       const size=c.size==='cell'?' cell':'';
       const dis=c.disabled?' disabled':'';
-      const ev=c.action&&c.action.event;
       const handler=(ev&&!c.disabled)?` onclick='a2Action(${JSON.stringify(JSON.stringify({sid,name:ev.name,ctx:ev.context||{}}))})'`:'';
       return `<button class="a2-btn ${variant}${size}"${dis}${handler}>${label}</button>`;
     }
@@ -1021,7 +1039,17 @@ function renderComponent(id,surf,data,scope,sid){
   }
 }
 function a2Input(meta,val){const {sid,path}=JSON.parse(meta);const r=A2REG[sid];if(!r||!path)return;setPointer(r.surface.data,path,val);}
-function a2Action(meta){const {sid,name,ctx}=JSON.parse(meta);const r=A2REG[sid];const ctxR={};for(const k in (ctx||{})){const v=ctx[k];ctxR[k]=(v&&typeof v==='object'&&'path'in v)?getPointer(r.surface.data,v.path):v;}studioLog(name,{...ctxR,_dataModel:r?r.surface.data:undefined});}
+function a2Rerender(sid){const r=A2REG[sid];if(!r)return;const host=document.getElementById(sid);if(!host)return;const pad=host.querySelector('.a2-pad');if(pad)pad.innerHTML=renderComponent('root',r.surface,r.surface.data,undefined,sid);}
+function a2Action(meta){
+  const {sid,name,ctx}=JSON.parse(meta);const r=A2REG[sid];
+  // Functioning date/time picker: update the selection and re-render the surface.
+  if(r){
+    if(name==='select_date' && ctx && 'date' in ctx){ setPointer(r.surface.data,'/sel/date',ctx.date); a2Rerender(sid); }
+    else if(name==='select_time' && ctx && 'time' in ctx){ setPointer(r.surface.data,'/sel/time',ctx.time); a2Rerender(sid); }
+  }
+  const ctxR={};for(const k in (ctx||{})){const v=ctx[k];ctxR[k]=(v&&typeof v==='object'&&'path'in v)?getPointer(r.surface.data,v.path):v;}
+  studioLog(name,{...ctxR,_dataModel:r?r.surface.data:undefined});
+}
 
 /* ---------- events console ---------- */
 function studioLog(name,payload){
@@ -1166,11 +1194,12 @@ async function studioPlay(){
     a.status.textContent='Mempersiapkan Jawaban';
     await studioRunPrepSteps(a);    // steps one by one: spinner -> check
     if(studioAbort) break;
-    await streamInto(a.content, turn);
-    a.prep.style.display='none'; a.prep.innerHTML='';   // response shown -> hide the steps
+    // Steps done: hide them and mark "Selesai" BEFORE the response appears.
+    a.prep.style.display='none'; a.prep.innerHTML='';
     const secs=((performance.now()-t0)/1000).toFixed(2).replace('.',',');
     a.status.textContent=`Selesai Mempersiapkan Jawaban (${secs} detik)`;
     a.foot.style.visibility='visible';
+    await streamInto(a.content, turn);
     await sleep(spd('studioTurnGap',80));
   }
   studioPlaying=false;
